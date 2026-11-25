@@ -147,7 +147,7 @@ const GH_DEFAULT={owner:'',repo:'',branch:'main',path:'data/state.json'};
    return run.then(t=>{busy--;try{if(bcs)bcs.postMessage(t)}catch(x){}if(!busy)emit(t)},e=>{busy--;throw e})},
   onSnapshot:cb=>{cbs.push(cb);
    if(cfg())start();else setTimeout(()=>emit(L('hbc_state')),0)}});
- window.GH={cfg,start,info:()=>info,
+ window.GH={cfg,start,info:()=>info,hasTok:()=>!!tok(),
   setCfg:o=>{W('hbc_gh',o?JSON.stringify(o):null);etag=null;sha=null;pulled=false},
   setTok:t=>W('hbc_tok',t)};
  window.claude={use:async()=>({doc})};
@@ -345,12 +345,13 @@ function ghCard(){const c=GH.cfg(),st=GH.info();
  return `<div class="card"><h3>GitHub 저장</h3><p class="muted" style="margin:0 0 10px">${c?`연결: ${esc(c.owner)}/${esc(c.repo)} · ${esc(c.branch)} · ${esc(c.path)}`:'연결 안 됨 · 이 브라우저에만 저장됩니다'}${st.msg?' · '+esc(st.msg):''}</p>
  <div class="row"><input id="ghr" placeholder="소유자/저장소 (예: myname/hellcup)" aria-label="저장소" value="${c?esc(c.owner+'/'+c.repo):''}"><input id="ghb" placeholder="브랜치" aria-label="브랜치" value="${c?esc(c.branch):'main'}" style="max-width:110px;flex:none"></div>
  <div class="row" style="margin-top:8px"><input id="ghp" placeholder="저장 파일 경로" aria-label="저장 파일 경로" value="${c?esc(c.path):'data/state.json'}"></div>
- <div class="row" style="margin-top:8px"><input id="ght" type="password" placeholder="GitHub 토큰 (Contents 읽기/쓰기 권한)" aria-label="GitHub 토큰" autocomplete="off"></div>
+ <div class="row" style="margin-top:8px"><input id="ght" type="password" placeholder="${GH.hasTok()?'저장된 토큰 사용 중 · 변경할 때만 새 토큰 입력':'GitHub 토큰 (Contents 읽기/쓰기 권한)'}" aria-label="GitHub 토큰" autocomplete="new-password"></div>
+ <p class="muted" style="margin:7px 0 0">${GH.hasTok()?'✓ 토큰 저장됨 · 다음 로그인부터 자동으로 사용됩니다':'토큰을 한 번 저장하면 다음부터 다시 입력할 필요가 없습니다.'}</p>
  <button class="btn" onclick="ghSave()">연결하고 저장 테스트</button><button class="btn s" onclick="ghOff()">연결 해제</button>
- <p class="muted" style="margin:10px 0 0">토큰은 이 브라우저에만 저장되고 파일에는 들어가지 않습니다. 일반 참여자는 토큰 없이 읽기만 합니다.</p></div>`}
+ <p class="muted" style="margin:10px 0 0">토큰은 이 브라우저의 로컬 저장소에 보관되며 GitHub 데이터 파일에는 포함되지 않습니다. 일반 참여자는 토큰 없이 읽기만 합니다.</p></div>`}
 async function ghSave(){const v=$('ghr').value.trim().split('/');if(v.length!==2||!v[0]||!v[1]){toast('저장소를 소유자/저장소 형식으로 입력하세요');return}
  GH.setCfg({owner:v[0],repo:v[1],branch:$('ghb').value.trim()||'main',path:$('ghp').value.trim()||'data/state.json'});
- const t=$('ght').value.trim();if(t)GH.setTok(t);GH.start();
+ const t=$('ght').value.trim();if(t)GH.setTok(t);if(!GH.hasTok()){toast('GitHub 토큰을 처음 한 번 입력해 주세요');return}GH.start();
  const ok=await save();toast(ok?'GitHub에 저장했습니다':'GitHub 저장에 실패했습니다. 저장소와 토큰을 확인하세요');render()}
 function ghOff(){GH.setCfg(null);GH.setTok('');toast('연결을 해제했습니다');render()}
 function drawTab(){return drawTab0()+(admin&&!drawing?resetCard()+ghCard():'')}
@@ -363,7 +364,7 @@ function render(){
  $('lg').textContent=admin?'로그아웃':'관리자 로그인';
  const lp=$('lp'),open=showLogin&&!admin;
  if(lp.dataset.o!==String(open)){lp.dataset.o=String(open);
-  lp.innerHTML=open?`<div class="card"><h3>관리자 로그인</h3><div class="row"><input id="lid" placeholder="아이디" aria-label="아이디" autocomplete="username"><input id="lpw" type="password" placeholder="비밀번호" aria-label="비밀번호" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></div><button class="btn" onclick="doLogin()">로그인</button><span class="muted" id="le"></span></div>`:''}
+  lp.innerHTML=open?`<div class="card"><h3>관리자 로그인</h3><div class="row"><input id="lid" placeholder="아이디" aria-label="아이디" autocomplete="username"><input id="lpw" type="password" placeholder="비밀번호" aria-label="비밀번호" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></div><p class="muted" style="margin:8px 0">GitHub 저장 토큰: ${GH.hasTok()?'저장됨 · 로그인 후 자동 사용':'미저장 · 관리자 로그인 후 GitHub 저장 설정에서 최초 1회 입력'}</p><button class="btn" onclick="doLogin()">로그인</button><span class="muted" id="le"></span></div>`:''}
  if(open)$('le').textContent=lerr;
  const app=$('app');app.innerHTML=S.tab==='draw'?drawTab():statusTab();
  if(last!==S.tab+S.sub){app.classList.remove('pane');void app.offsetWidth;app.classList.add('pane');last=S.tab+S.sub}
