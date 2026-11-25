@@ -6,6 +6,13 @@
  "seasonId": "season-mww2axlo",
  "winners": [
   {
+   "id": "w6rrpuzg",
+   "name": "개최자 군 복무로 인한 미개최",
+   "year": 2025,
+   "seasonId": "manual-mww2jvag",
+   "manual": true
+  },
+  {
    "id": "wrjnyid0",
    "name": "개최자 군 복무로 인한 미개최",
    "year": 2024,
