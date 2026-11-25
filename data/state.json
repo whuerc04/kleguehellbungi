@@ -1,8 +1,21 @@
 {
- "players": [],
+ "players": [
+  "안양",
+  "서을",
+  "부천",
+  "제주",
+  "포항",
+  "대전",
+  "울산",
+  "전북",
+  "강원"
+ ],
  "order": [],
  "gn": 4,
  "adv": 2,
+ "rounds": 1,
+ "tourRoundCount": 0,
+ "adjustments": {},
  "seasonId": "season-mww2axlo",
  "winners": [
   {
