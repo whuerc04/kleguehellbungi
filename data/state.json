@@ -6,6 +6,13 @@
  "seasonId": "season-mww2axlo",
  "winners": [
   {
+   "id": "wco2gz38",
+   "name": "해탈한 일류첸코(서울)",
+   "year": 2026,
+   "seasonId": "manual-mww2jzmu",
+   "manual": true
+  },
+  {
    "id": "w6rrpuzg",
    "name": "개최자 군 복무로 인한 미개최",
    "year": 2025,
