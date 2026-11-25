@@ -16,7 +16,7 @@
  "rounds": 1,
  "tourRoundCount": 0,
  "adjustments": {},
- "seasonId": "season-mww2axlo",
+ "seasonId": "season-mwwa5wag",
  "winners": [
   {
    "id": "wco2gz38",
@@ -55,26 +55,6 @@
   }
  ],
  "bt": [],
- "groups": [
-  {
-   "id": "gt90ph",
-   "m": [
-    "강원",
-    "부천",
-    "전북",
-    "울산"
-   ]
-  },
-  {
-   "id": "g97zf3",
-   "m": [
-    "제주",
-    "서을",
-    "대전",
-    "포항",
-    "안양"
-   ]
-  }
- ],
+ "groups": [],
  "sc": []
 }
