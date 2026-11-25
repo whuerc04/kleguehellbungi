@@ -101,16 +101,60 @@ tr.q td:first-child{box-shadow:inset 3px 0 0 var(--ac)}tr.q td{background:rgba(2
 <main id="app" class="wrap"></main>
 <div id="bar" role="status"></div><div id="toast" role="status"></div>
 <script>
-/* 단독 실행용: 호스팅 DB가 없으면 이 브라우저의 localStorage에 저장합니다 */
-if(typeof claude==='undefined'){(function(){const K='hbc_state';let cbs=[];
-const rd=()=>{try{return localStorage.getItem(K)}catch(e){return null}};
-const snap=()=>{const v=rd();return {exists:!!v,data:()=>JSON.parse(v)}};
-window.claude={use:async()=>({doc:()=>({
- set:async d=>{localStorage.setItem(K,JSON.stringify(d));cbs.forEach(c=>c(snap()))},
- onSnapshot:c=>{cbs.push(c);setTimeout(()=>c(snap()),0)}})})}})()}
+/* 단독 실행용 저장소: GitHub 저장소의 JSON 파일에 저장합니다. GitHub 설정이 없으면 이 브라우저(localStorage)에 저장합니다.
+   GitHub Pages가 아닌 곳에 올릴 때는 아래 GH_DEFAULT에 소유자/저장소를 적어 두면 방문자도 같은 데이터를 읽습니다. 토큰은 절대 여기에 적지 마세요. */
+const GH_DEFAULT={owner:'',repo:'',branch:'main',path:'data/state.json'};
+(function(){
+ const L=k=>{try{return localStorage.getItem(k)}catch(e){return null}};
+ const W=(k,v)=>{try{v==null||v===''?localStorage.removeItem(k):localStorage.setItem(k,v)}catch(e){}};
+ function cfg(){let c=null;try{c=JSON.parse(L('hbc_gh')||'null')}catch(e){}
+  if(c&&c.owner&&c.repo)return {branch:'main',path:'data/state.json',...c};
+  if(GH_DEFAULT.owner&&GH_DEFAULT.repo)return {...GH_DEFAULT};
+  const h=location.hostname;if(/\.github\.io$/.test(h)){const r=location.pathname.split('/')[1];if(r)return {owner:h.split('.')[0],repo:r,branch:'main',path:'data/state.json'}}
+  return null}
+ const tok=()=>L('hbc_tok')||'';
+ const url=(c,q)=>'https://api.github.com/repos/'+c.owner+'/'+c.repo+'/contents/'+c.path.split('/').map(encodeURIComponent).join('/')+(q||'');
+ const hdr=(raw,x)=>{const h={Accept:raw?'application/vnd.github.raw+json':'application/vnd.github+json',...x};if(tok())h.Authorization='Bearer '+tok();return h};
+ const b64=s=>{let x='';new TextEncoder().encode(s).forEach(v=>x+=String.fromCharCode(v));return btoa(x)};
+ const bcs=window.BroadcastChannel?new BroadcastChannel('hbc-state'):null;
+ let cbs=[],etag=null,sha=null,busy=0,last=null,pulled=false,timer=null,chain=Promise.resolve(),info={ok:null,msg:''};
+ const emit=t=>{last=t;const sn={exists:t!=null,data:()=>JSON.parse(t)};cbs.forEach(c=>c(sn))};
+ async function pull(){const c=cfg();if(!c||busy)return;
+  try{const r=await fetch(url(c,'?ref='+encodeURIComponent(c.branch)),{headers:hdr(true,etag?{'If-None-Match':etag}:{}),cache:'no-store'});
+   if(r.status===304)return;
+   if(r.status===404){etag=null;sha=null;if(!pulled){pulled=true;emit(null)}return}
+   if(!r.ok){info={ok:false,msg:'읽기 실패 ('+r.status+')'};return}
+   etag=r.headers.get('ETag');const t=await r.text();pulled=true;info={ok:true,msg:''};
+   if(!busy&&t!==last)emit(t)}
+  catch(e){info={ok:false,msg:'네트워크 오류'}}}
+ async function put(d){const c=cfg();if(!c)throw new Error('GitHub 설정 필요');if(!tok())throw new Error('토큰 필요');
+  const t=JSON.stringify(d,null,1);
+  for(let n=0;n<3;n++){
+   if(!sha){const g=await fetch(url(c,'?ref='+encodeURIComponent(c.branch)),{headers:hdr(false),cache:'no-store'});
+    if(g.ok)sha=(await g.json()).sha;else if(g.status!==404)throw new Error('읽기 실패 ('+g.status+')')}
+   const r=await fetch(url(c),{method:'PUT',headers:hdr(false,{'Content-Type':'application/json'}),
+    body:JSON.stringify({message:'대회 데이터 업데이트',content:b64(t),branch:c.branch,...(sha?{sha}:{})})});
+   if(r.ok){sha=(await r.json()).content.sha;etag=null;return t}
+   if(r.status===409||r.status===422){sha=null;continue}
+   throw new Error('쓰기 실패 ('+r.status+')')}
+  throw new Error('충돌이 계속되어 저장하지 못했습니다')}
+ function start(){if(cfg()&&!timer){pull();timer=setInterval(()=>{if(!document.hidden)pull()},15000)}}
+ const doc=()=>({
+  set:d=>{busy++;const run=chain.then(async()=>{
+    if(!cfg()){const t=JSON.stringify(d);W('hbc_state',t);return t}
+    try{const t=await put(d);info={ok:true,msg:'저장됨'};return t}catch(e){info={ok:false,msg:e.message};throw e}});
+   chain=run.catch(()=>{});
+   return run.then(t=>{busy--;try{if(bcs)bcs.postMessage(t)}catch(x){}if(!busy)emit(t)},e=>{busy--;throw e})},
+  onSnapshot:cb=>{cbs.push(cb);
+   if(cfg())start();else setTimeout(()=>emit(L('hbc_state')),0)}});
+ window.GH={cfg,start,info:()=>info,
+  setCfg:o=>{W('hbc_gh',o?JSON.stringify(o):null);etag=null;sha=null;pulled=false},
+  setTok:t=>W('hbc_tok',t)};
+ window.claude={use:async()=>({doc})};
+})();
 </script>
 <script>
-const S={tab:'draw',sub:'league',mode:'p',edit:false,players:[],order:[],groups:[],gn:4,adv:2,sc:{},bt:{}};
+const S={tab:'draw',sub:'league',mode:'p',edit:false,players:[],order:[],groups:[],gn:4,adv:2,sc:{},bt:{},seasonId:'season-'+Date.now().toString(36),winners:[]};
 let admin=false,ref=null,net='',showLogin=false,lerr='',fresh=false,arm='',D={},last='',tt;
 const $=i=>document.getElementById(i);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -119,8 +163,8 @@ const uid=()=>'g'+Math.random().toString(36).slice(2,7);
 const gname=i=>String.fromCharCode(65+i%26)+(i>=26?Math.floor(i/26):'');
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('on');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('on'),2200)}
 const save=()=>{if(!admin||!ref)return Promise.resolve(false);
- return ref.set({players:S.players,order:S.order,gn:S.gn,adv:S.adv,bt:Object.entries(S.bt).map(([k,v])=>({k,v})),groups:S.groups.map(g=>({id:g.id,m:g.m})),sc:Object.entries(S.sc).map(([k,v])=>({k,v}))}).then(()=>true).catch(()=>{net=' · 저장 권한이 없습니다 (아티팩트 편집/기여자 권한 필요)';render();return false})};
-function apply(d){['players','order','gn','adv'].forEach(k=>{if(d[k]!==undefined)S[k]=d[k]});
+ return ref.set({players:S.players,order:S.order,gn:S.gn,adv:S.adv,seasonId:S.seasonId,winners:S.winners,bt:Object.entries(S.bt).map(([k,v])=>({k,v})),groups:S.groups.map(g=>({id:g.id,m:g.m})),sc:Object.entries(S.sc).map(([k,v])=>({k,v}))}).then(()=>true).catch(()=>{net=' · GitHub 저장에 실패했습니다 · 저장소와 토큰을 확인하세요';render();return false})};
+function apply(d){['players','order','gn','adv','seasonId','winners'].forEach(k=>{if(d[k]!==undefined)S[k]=d[k]});if(!S.seasonId)S.seasonId='season-'+Date.now().toString(36);if(!Array.isArray(S.winners))S.winners=[];
  S.groups=(d.groups||[]).map((x,i)=>({id:x.id||'g'+i,m:x.m||[]}));
  S.bt=Array.isArray(d.bt)?Object.fromEntries(d.bt.map(e=>[e.k,e.v])):{};
  S.sc=Array.isArray(d.sc)?Object.fromEntries(d.sc.map(e=>[e.k,e.v])):{}}
@@ -167,7 +211,7 @@ async function drawGroups(){
   for(let f=0;f<8&&!skip;f++){const el=$('to');if(el)el.textContent=gname(Math.floor(Math.random()*n))+'조';await sleep(70)}
   S.groups[gi].m.push(p);DR={on:true,name:p,gi,pop:gi+':'+(S.groups[gi].m.length-1),k:i+1,t:plan.length};render();await sleep(700)}
  DR={};drawing=false;render();
- save().then(ok=>toast(ok?'조 추첨을 마쳤습니다':'저장 권한이 없어 이 화면에만 반영됐습니다'))}
+ save().then(ok=>toast(ok?'조 추첨을 마쳤습니다':'GitHub 저장에 실패해 이 화면에만 반영됐습니다'))}
 
 const gcard=(g,gi,ed)=>`<div class="card${DR.on&&DR.gi===gi?' hl':''}"><div class="gh"><span class="gl">${gname(gi)}</span><span class="muted">${g.m.length}명</span>${ed?`<button class="btn s sm" style="margin-left:auto" onclick="rmGroup(${gi})">${arm==='g'+gi?'한 번 더 누르면 삭제':'조 삭제'}</button>`:''}</div>
 <div>${g.m.map((p,pi)=>`<span class="chip${DR.pop===gi+':'+pi?' pop':''}">${esc(p)}${ed?`<button class="x" aria-label="${esc(p)} 삭제" onclick="rmPlayer(${gi},${pi})">×</button>`:''}</span>`).join('')||'<span class="muted">인원이 없습니다</span>'}</div>
@@ -195,7 +239,7 @@ const val=(t,k,x)=>((D[t+':'+k]||S[t][k]||[])[x]??'');
 const sv=(t,k,x)=>admin?`<input class="sc" type="number" min="0" inputmode="numeric" aria-label="점수" data-k="${esc(k)}" value="${esc(val(t,k,x))}" oninput="dr('${t}',this,${x})">`:`<b class="sv">${val(t,k,x)===''||val(t,k,x)===undefined?'-':esc(val(t,k,x))}</b>`;
 function dr(t,el,x){const k=el.dataset.k,id=t+':'+k,cur=D[id]||[...(S[t][k]||[]),'','','',''].slice(0,4);cur[x]=el.value;D[id]=cur;el.closest('.m,.bm').classList.add('dirty');bar()}
 function commit(){Object.entries(D).forEach(([id,v])=>{const i=id.indexOf(':');S[id.slice(0,i)][id.slice(i+1)]=v});D={};
- save().then(ok=>toast(ok?'점수를 저장했습니다':'저장 권한이 없어 이 화면에만 반영됐습니다'));render()}
+ save().then(ok=>toast(ok?'점수를 저장했습니다':'GitHub 저장에 실패해 이 화면에만 반영됐습니다'));render()}
 function bar(){const n=Object.keys(D).length,b=$('bar');
  if(admin&&n){b.innerHTML=`<div><span>저장하지 않은 점수 ${n}건</span><button class="btn" onclick="commit()">점수 저장</button></div>`;b.classList.add('on')}else b.classList.remove('on')}
 function leagueTab(){
@@ -238,9 +282,18 @@ function pkRow(m){const s=S.bt[m.k];if(!s||!done(s)||+s[0]!==+s[1])return '';
 function mbox(m){const live=!!m.a&&!!m.b;
  const row=(p,x)=>`<div class="t${m.w&&m.w===p?' w':''}"><span>${slot(p)}</span>${live?sv('bt',m.k,x):''}</div>`;
  return `<div class="bm">${row(m.a,0)}${row(m.b,1)}${live?pkRow(m):''}</div>`}
+function syncChampion(B){
+ if(!admin||!B||!B.fin||!B.fin.w||typeof B.fin.w!=='string')return;
+ if(S.winners.some(x=>x.seasonId===S.seasonId))return;
+ const rec={id:'w'+Math.random().toString(36).slice(2,9),seasonId:S.seasonId,name:B.fin.w,date:new Date().toISOString().slice(0,10),runner:B.fin.a===B.fin.w?B.fin.b:B.fin.a};
+ S.winners.unshift(rec);save().then(ok=>{if(ok)toast(rec.name+' 우승 기록이 역대 우승자에 추가됐습니다')});
+}
+function addWinner(){if(!admin)return;const name=$('winnerName')?.value.trim(),date=$('winnerDate')?.value||new Date().toISOString().slice(0,10);if(!name){toast('우승자 이름을 입력하세요');return}S.winners.unshift({id:'w'+Math.random().toString(36).slice(2,9),name,date,seasonId:'manual-'+Date.now().toString(36),manual:true});save().then(ok=>toast(ok?'역대 우승자를 추가했습니다':'저장에 실패했습니다'));render()}
+function deleteWinner(id){if(!admin)return;if(arm!=='winner-'+id){arm='winner-'+id;render();setTimeout(()=>{if(arm==='winner-'+id){arm='';render()}},3000);return}S.winners=S.winners.filter(x=>x.id!==id);arm='';save().then(ok=>toast(ok?'우승 기록을 삭제했습니다':'저장에 실패했습니다'));render()}
+function winnersTab(){const rows=S.winners.map(w=>`<div class="row" style="justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)"><div><div style="font-weight:800">${esc(w.name)}</div><div class="muted">${esc(w.date||'날짜 미상')}${w.manual?' · 수동 등록':''}</div></div>${admin?`<button class="btn s sm" onclick="deleteWinner('${esc(w.id)}')">${arm==='winner-'+w.id?'한 번 더 눌러 삭제':'삭제'}</button>`:''}</div>`).join('');return `<div class="card"><h3>역대 우승자</h3><p class="muted">대회 결승 결과가 확정되면 우승자가 자동으로 기록됩니다.</p>${admin?`<div class="row" style="margin:12px 0"><input id="winnerName" placeholder="우승자 이름" aria-label="우승자 이름"><input id="winnerDate" type="date" aria-label="우승 날짜" value="${new Date().toISOString().slice(0,10)}" style="max-width:155px;flex:none"><button class="btn" onclick="addWinner()">추가</button></div>`:''}${rows||'<div class="muted" style="padding:18px 0">아직 등록된 우승자가 없습니다.</div>'}</div>`}
 function tourTab(){
  if(!S.groups.length)return `<div class="card muted">${admin?'먼저 조추첨과 조별리그를 진행하세요.':'아직 토너먼트가 시작되지 않았습니다.'}</div>`;
- const B=bracket();
+ const B=bracket();syncChampion(B);
  const h=`<div class="card"><div class="row"><label for="adv">조별 진출 인원</label><select id="adv" ${admin?'':'disabled'} onchange="S.adv=+this.value;S.bt={};D={};save();render()">${[1,2,3,4].map(n=>`<option ${n===S.adv?'selected':''}>${n}</option>`).join('')}</select><span class="muted">진출 ${B.seeds.length}명</span></div></div>`;
  if(!B.rounds)return h+`<div class="card muted">진출자가 2명 이상 필요합니다.</div>`;
  const R=B.rounds,tot=R.length,L=['결승','4강','8강','16강','32강','64강'];
@@ -254,12 +307,13 @@ function tourTab(){
 function ro(f){const a=admin;admin=false;try{return f()}finally{admin=a}}
 function prog(){let t=0,d=0;S.groups.forEach(g=>matches(g).forEach(([i,j])=>{t++;if(done(S.sc[mk(g,i,j)]))d++}));return [d,t]}
 function setSub(k){S.sub=k;render()}
-const SUBS=[['league','조별리그'],['tour','토너먼트'],['scorer','득점왕'],['groups','조편성']];
+const SUBS=[['league','조별리그'],['tour','토너먼트'],['scorer','득점왕'],['groups','조편성'],['winners','역대 우승자']];
 function statusTab(){
  const nav=`<div class="sub" role="tablist">${SUBS.map(([k,l])=>`<button role="tab" aria-selected="${S.sub===k}" class="${S.sub===k?'on':''}" onclick="setSub('${k}')">${l}</button>`).join('')}</div>`;
  if(S.sub==='tour')return nav+tourTab();
  if(S.sub==='scorer')return nav+scorerTab();
  if(S.sub==='groups')return nav+viewGroups();
+ if(S.sub==='winners')return nav+winnersTab();
  if(!S.groups.length)return nav+leagueTab();
  const [d,t]=prog(),pc=t?Math.round(d/t*100):0;
  return nav+`<div class="card"><h3>조별리그 진행상황</h3><div class="muted">경기 ${d} / ${t} 완료 (${pc}%)</div><div class="pg"><i style="width:${pc}%"></i></div></div>`+leagueTab()}
@@ -284,10 +338,22 @@ function scorerTab(){
 
 /* 시즌 초기화 */
 function resetSeason(){if(arm!=='reset'){arm='reset';render();setTimeout(()=>{if(arm==='reset'){arm='';render()}},3000);return}
- arm='';S.groups=[];S.order=[];S.sc={};S.bt={};D={};S.edit=false;S.sub='league';
- save().then(ok=>toast(ok?'시즌을 초기화했습니다':'저장 권한이 없어 이 화면에만 반영됐습니다'));render()}
+ arm='';S.groups=[];S.order=[];S.sc={};S.bt={};S.seasonId='season-'+Date.now().toString(36);D={};S.edit=false;S.sub='league';
+ save().then(ok=>toast(ok?'시즌을 초기화했습니다':'GitHub 저장에 실패해 이 화면에만 반영됐습니다'));render()}
 const resetCard=()=>`<div class="card"><h3>시즌 초기화</h3><p class="muted" style="margin:0">조편성과 조별리그·토너먼트 점수(득점 순위 포함)를 모두 지우고 새 시즌을 시작합니다. 참가자 명단은 남습니다.</p><button class="btn s" onclick="resetSeason()">${arm==='reset'?'한 번 더 누르면 초기화':'시즌 초기화'}</button></div>`;
-function drawTab(){return drawTab0()+(admin?resetCard():'')}
+function ghCard(){const c=GH.cfg(),st=GH.info();
+ return `<div class="card"><h3>GitHub 저장</h3><p class="muted" style="margin:0 0 10px">${c?`연결: ${esc(c.owner)}/${esc(c.repo)} · ${esc(c.branch)} · ${esc(c.path)}`:'연결 안 됨 · 이 브라우저에만 저장됩니다'}${st.msg?' · '+esc(st.msg):''}</p>
+ <div class="row"><input id="ghr" placeholder="소유자/저장소 (예: myname/hellcup)" aria-label="저장소" value="${c?esc(c.owner+'/'+c.repo):''}"><input id="ghb" placeholder="브랜치" aria-label="브랜치" value="${c?esc(c.branch):'main'}" style="max-width:110px;flex:none"></div>
+ <div class="row" style="margin-top:8px"><input id="ghp" placeholder="저장 파일 경로" aria-label="저장 파일 경로" value="${c?esc(c.path):'data/state.json'}"></div>
+ <div class="row" style="margin-top:8px"><input id="ght" type="password" placeholder="GitHub 토큰 (Contents 읽기/쓰기 권한)" aria-label="GitHub 토큰" autocomplete="off"></div>
+ <button class="btn" onclick="ghSave()">연결하고 저장 테스트</button><button class="btn s" onclick="ghOff()">연결 해제</button>
+ <p class="muted" style="margin:10px 0 0">토큰은 이 브라우저에만 저장되고 파일에는 들어가지 않습니다. 일반 참여자는 토큰 없이 읽기만 합니다.</p></div>`}
+async function ghSave(){const v=$('ghr').value.trim().split('/');if(v.length!==2||!v[0]||!v[1]){toast('저장소를 소유자/저장소 형식으로 입력하세요');return}
+ GH.setCfg({owner:v[0],repo:v[1],branch:$('ghb').value.trim()||'main',path:$('ghp').value.trim()||'data/state.json'});
+ const t=$('ght').value.trim();if(t)GH.setTok(t);GH.start();
+ const ok=await save();toast(ok?'GitHub에 저장했습니다':'GitHub 저장에 실패했습니다. 저장소와 토큰을 확인하세요');render()}
+function ghOff(){GH.setCfg(null);GH.setTok('');toast('연결을 해제했습니다');render()}
+function drawTab(){return drawTab0()+(admin&&!drawing?resetCard()+ghCard():'')}
 
 function render(){
  if(!admin)S.tab='status';
