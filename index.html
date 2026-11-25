@@ -148,6 +148,7 @@ const GH_DEFAULT={owner:'',repo:'',branch:'main',path:'data/state.json'};
   onSnapshot:cb=>{cbs.push(cb);
    if(cfg())start();else setTimeout(()=>emit(L('hbc_state')),0)}});
  window.GH={cfg,start,info:()=>info,hasTok:()=>!!tok(),
+  verifyTok:async t=>{try{const r=await fetch('https://api.github.com/user',{headers:{Accept:'application/vnd.github+json',Authorization:'Bearer '+t},cache:'no-store'});return r.ok}catch(e){return false}},
   setCfg:o=>{W('hbc_gh',o?JSON.stringify(o):null);etag=null;sha=null;pulled=false},
   setTok:t=>W('hbc_tok',t)};
  window.claude={use:async()=>({doc})};
@@ -180,8 +181,15 @@ async function init(){
  render()}
 const HASH='6a6ef905ee6e892d81c1e8d94ebdeeb5785fcfa54c3be07bebd78d38c8f53f3d';
 async function sha(t){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(t));return[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')}
-async function doLogin(){const id=$('lid').value.trim(),pw=$('lpw').value;
- try{if(await sha('hbc:'+id+':'+pw)===HASH){admin=true;showLogin=false;lerr='';try{sessionStorage.setItem('adm','1')}catch(e){}}else lerr='아이디 또는 비밀번호가 맞지 않습니다'}catch(e){lerr='이 환경에서는 로그인을 사용할 수 없습니다'}
+async function doLogin(){const id=$('lid').value.trim(),pw=$('lpw').value,typedTok=$('lgt')?.value.trim()||'';
+ try{
+  if(await sha('hbc:'+id+':'+pw)!==HASH){lerr='아이디 또는 비밀번호가 맞지 않습니다';render();return}
+  const token=typedTok|| (GH.hasTok()?'__SAVED__':'');
+  if(!token){lerr='관리자 인증용 GitHub 토큰을 입력해 주세요';render();return}
+  if(typedTok){const valid=await GH.verifyTok(typedTok);if(!valid){lerr='GitHub 토큰이 유효하지 않습니다. 토큰을 확인해 주세요';render();return}GH.setTok(typedTok)}
+  else { /* 이미 저장된 토큰은 그대로 사용 */ }
+  admin=true;showLogin=false;lerr='';try{sessionStorage.setItem('adm','1')}catch(e){}
+ }catch(e){lerr='로그인 처리 중 오류가 발생했습니다'}
  render()}
 function toggleLogin(){if(admin){admin=false;S.edit=false;D={};try{sessionStorage.removeItem('adm')}catch(e){}}else{showLogin=!showLogin;lerr=''}render()}
 $('tabs').onclick=e=>{const t=e.target.dataset.t;if(t){S.tab=t;render()}};
@@ -364,7 +372,7 @@ function render(){
  $('lg').textContent=admin?'로그아웃':'관리자 로그인';
  const lp=$('lp'),open=showLogin&&!admin;
  if(lp.dataset.o!==String(open)){lp.dataset.o=String(open);
-  lp.innerHTML=open?`<div class="card"><h3>관리자 로그인</h3><div class="row"><input id="lid" placeholder="아이디" aria-label="아이디" autocomplete="username"><input id="lpw" type="password" placeholder="비밀번호" aria-label="비밀번호" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"></div><p class="muted" style="margin:8px 0">GitHub 저장 토큰: ${GH.hasTok()?'저장됨 · 로그인 후 자동 사용':'미저장 · 관리자 로그인 후 GitHub 저장 설정에서 최초 1회 입력'}</p><button class="btn" onclick="doLogin()">로그인</button><span class="muted" id="le"></span></div>`:''}
+  lp.innerHTML=open?`<div class="card"><h3>관리자 로그인</h3><div class="row"><input id="lid" placeholder="아이디" aria-label="아이디" autocomplete="off" name="visitor-login-id"><input id="lpw" type="password" placeholder="비밀번호" aria-label="비밀번호" autocomplete="off" name="visitor-login-password" onkeydown="if(event.key==='Enter')doLogin()"></div><div class="row" style="margin-top:8px"><input id="lgt" type="password" placeholder="${GH.hasTok()?'GitHub 토큰 저장됨 · 변경할 때만 새 토큰 입력':'GitHub 서버 토큰 (최초 1회 입력)'}" aria-label="GitHub 서버 토큰" autocomplete="new-password" onkeydown="if(event.key==='Enter')doLogin()"></div><p class="muted" style="margin:8px 0">${GH.hasTok()?'✓ 토큰이 이 브라우저에 저장되어 있습니다. 토큰 입력 없이 아이디와 비밀번호로 로그인할 수 있습니다.':'처음 한 번 토큰을 입력하면 이 브라우저에 저장되며, 다음부터는 아이디와 비밀번호만 입력하면 됩니다.'}</p><button class="btn" onclick="doLogin()">로그인</button><span class="muted" id="le"></span></div>`:''}
  if(open)$('le').textContent=lerr;
  const app=$('app');app.innerHTML=S.tab==='draw'?drawTab():statusTab();
  if(last!==S.tab+S.sub){app.classList.remove('pane');void app.offsetWidth;app.classList.add('pane');last=S.tab+S.sub}
