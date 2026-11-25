@@ -155,7 +155,7 @@ const GH_DEFAULT={owner:'',repo:'',branch:'main',path:'data/state.json'};
 })();
 </script>
 <script>
-const S={tab:'draw',sub:'league',mode:'p',edit:false,players:[],order:[],groups:[],gn:4,adv:2,sc:{},bt:{},seasonId:'season-'+Date.now().toString(36),winners:[]};
+const S={tab:'draw',sub:'league',mode:'p',edit:false,players:[],order:[],groups:[],gn:4,adv:2,tourRoundCount:0,sc:{},bt:{},seasonId:'season-'+Date.now().toString(36),winners:[],rounds:1,adjustments:{}};
 let admin=false,ref=null,net='',showLogin=false,lerr='',fresh=false,arm='',D={},last='',tt;
 const $=i=>document.getElementById(i);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -164,8 +164,8 @@ const uid=()=>'g'+Math.random().toString(36).slice(2,7);
 const gname=i=>String.fromCharCode(65+i%26)+(i>=26?Math.floor(i/26):'');
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('on');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('on'),2200)}
 const save=()=>{if(!admin||!ref)return Promise.resolve(false);
- return ref.set({players:S.players,order:S.order,gn:S.gn,adv:S.adv,seasonId:S.seasonId,winners:S.winners,bt:Object.entries(S.bt).map(([k,v])=>({k,v})),groups:S.groups.map(g=>({id:g.id,m:g.m})),sc:Object.entries(S.sc).map(([k,v])=>({k,v}))}).then(()=>true).catch(()=>{net=' · GitHub 저장에 실패했습니다 · 저장소와 토큰을 확인하세요';render();return false})};
-function apply(d){['players','order','gn','adv','seasonId','winners'].forEach(k=>{if(d[k]!==undefined)S[k]=d[k]});if(!S.seasonId)S.seasonId='season-'+Date.now().toString(36);if(!Array.isArray(S.winners))S.winners=[];
+ return ref.set({players:S.players,order:S.order,gn:S.gn,adv:S.adv,rounds:S.rounds,tourRoundCount:S.tourRoundCount,adjustments:S.adjustments,seasonId:S.seasonId,winners:S.winners,bt:Object.entries(S.bt).map(([k,v])=>({k,v})),groups:S.groups.map(g=>({id:g.id,m:g.m})),sc:Object.entries(S.sc).map(([k,v])=>({k,v}))}).then(()=>true).catch(()=>{net=' · GitHub 저장에 실패했습니다 · 저장소와 토큰을 확인하세요';render();return false})};
+function apply(d){['players','order','gn','adv','rounds','tourRoundCount','adjustments','seasonId','winners'].forEach(k=>{if(d[k]!==undefined)S[k]=d[k]});if(!S.seasonId)S.seasonId='season-'+Date.now().toString(36);if(!Array.isArray(S.winners))S.winners=[];if(!Number.isInteger(+S.rounds)||+S.rounds<1)S.rounds=1;S.rounds=Math.min(6,+S.rounds);if(!Number.isInteger(+S.tourRoundCount)||+S.tourRoundCount<0)S.tourRoundCount=0;S.tourRoundCount=Math.min(10,+S.tourRoundCount);if(!S.adjustments||typeof S.adjustments!=='object')S.adjustments={};
  S.groups=(d.groups||[]).map((x,i)=>({id:x.id||'g'+i,m:x.m||[]}));
  S.bt=Array.isArray(d.bt)?Object.fromEntries(d.bt.map(e=>[e.k,e.v])):{};
  S.sc=Array.isArray(d.sc)?Object.fromEntries(d.sc.map(e=>[e.k,e.v])):{}}
@@ -213,7 +213,7 @@ async function drawGroups(){
  const n=Math.min(S.gn,S.players.length),ps=shuf(S.players),plan=[];
  for(let r=0;r*n<ps.length;r++){const perm=shuf([...Array(n).keys()]);ps.slice(r*n,r*n+n).forEach((p,i)=>plan.push([p,perm[i]]))}
  drawing=true;skip=false;S.edit=false;
- S.groups=Array.from({length:n},()=>({id:uid(),m:[]}));S.sc={};S.bt={};S.order=[];D={};
+ S.groups=Array.from({length:n},()=>({id:uid(),m:[]}));S.sc={};S.bt={};S.adjustments={};S.order=[];D={};
  for(let i=0;i<plan.length;i++){const [p,gi]=plan[i];
   DR={on:true,name:p,gi:-1,pop:'',k:i+1,t:plan.length};render();await sleep(750);
   for(let f=0;f<8&&!skip;f++){const el=$('to');if(el)el.textContent=gname(Math.floor(Math.random()*n))+'조';await sleep(70)}
@@ -235,14 +235,14 @@ function drawTab0(){
  <p class="muted" style="margin:10px 0 0">참가자를 한 명씩 뽑아 조에 배치합니다. 다시 추첨하면 조별리그 점수가 초기화됩니다.</p></div>`+grid}
 
 /* 조별리그 */
-const mk=(g,i,j)=>g.id+'|'+g.m[i]+'|'+g.m[j];
-function matches(g){const m=[];for(let i=0;i<g.m.length;i++)for(let j=i+1;j<g.m.length;j++)m.push([i,j]);return m}
+const mk=(g,i,j,r=1)=>g.id+'|'+g.m[i]+'|'+g.m[j]+(r>1?'|r'+r:'');
+function matches(g){const m=[];for(let r=1;r<=S.rounds;r++)for(let i=0;i<g.m.length;i++)for(let j=i+1;j<g.m.length;j++)m.push([i,j,r]);return m}
 const done=s=>s&&s[0]!==''&&s[1]!==''&&s[0]!==undefined&&s[1]!==undefined;
 function standings(gi){const g=S.groups[gi],t=g.m.map(n=>({n,p:0,w:0,d:0,l:0,gf:0,ga:0}));
- matches(g).forEach(([i,j])=>{const s=S.sc[mk(g,i,j)];if(!done(s))return;const a=+s[0],b=+s[1];
+ matches(g).forEach(([i,j,r])=>{const s=S.sc[mk(g,i,j,r)];if(!done(s))return;const a=+s[0],b=+s[1];
   t[i].gf+=a;t[i].ga+=b;t[j].gf+=b;t[j].ga+=a;
   if(a>b){t[i].w++;t[i].p+=3;t[j].l++}else if(a<b){t[j].w++;t[j].p+=3;t[i].l++}else{t[i].d++;t[j].d++;t[i].p++;t[j].p++}});
- return t.sort((x,y)=>y.p-x.p||(y.gf-y.ga)-(x.gf-x.ga)||y.gf-x.gf)}
+ t.forEach(x=>{const z=(S.adjustments[g.id]||{})[x.n]||{};x.penalty=Math.max(0,+z.penalty||0);x.advantage=Math.max(0,+z.advantage||0);x.p+=x.advantage-x.penalty}); return t.sort((x,y)=>y.p-x.p||(y.gf-y.ga)-(x.gf-x.ga)||y.gf-x.gf)}
 const val=(t,k,x)=>((D[t+':'+k]||S[t][k]||[])[x]??'');
 const sv=(t,k,x)=>admin?`<input class="sc" type="number" min="0" inputmode="numeric" aria-label="점수" data-k="${esc(k)}" value="${esc(val(t,k,x))}" oninput="dr('${t}',this,${x})">`:`<b class="sv">${val(t,k,x)===''||val(t,k,x)===undefined?'-':esc(val(t,k,x))}</b>`;
 function dr(t,el,x){const k=el.dataset.k,id=t+':'+k,cur=D[id]||[...(S[t][k]||[]),'','','',''].slice(0,4);cur[x]=el.value;D[id]=cur;el.closest('.m,.bm').classList.add('dirty');bar()}
@@ -250,13 +250,16 @@ function commit(){Object.entries(D).forEach(([id,v])=>{const i=id.indexOf(':');S
  save().then(ok=>toast(ok?'점수를 저장했습니다':'GitHub 저장에 실패해 이 화면에만 반영됐습니다'));render()}
 function bar(){const n=Object.keys(D).length,b=$('bar');
  if(admin&&n){b.innerHTML=`<div><span>저장하지 않은 점수 ${n}건</span><button class="btn" onclick="commit()">점수 저장</button></div>`;b.classList.add('on')}else b.classList.remove('on')}
+function changeRounds(delta){if(!admin)return;const next=Math.max(1,Math.min(6,S.rounds+delta));if(next===S.rounds)return;if(next<S.rounds){for(const g of S.groups)for(let r=next+1;r<=S.rounds;r++)for(let i=0;i<g.m.length;i++)for(let j=i+1;j<g.m.length;j++)delete S.sc[mk(g,i,j,r)];}S.rounds=next;D={};save().then(ok=>toast(ok?'라운드 설정을 저장했습니다':'저장에 실패했습니다'));render()}
+function setRounds(v){if(!admin)return;const n=Math.max(1,Math.min(6,parseInt(v,10)||1));changeRounds(n-S.rounds)}
+function adjustPoint(gi,name,type,delta){if(!admin)return;const g=S.groups[gi];if(!g)return;S.adjustments[g.id]=S.adjustments[g.id]||{};const z=S.adjustments[g.id][name]||(S.adjustments[g.id][name]={penalty:0,advantage:0});z[type]=Math.max(0,(+z[type]||0)+delta);save().then(ok=>toast(ok?'승점 조정을 저장했습니다':'저장에 실패했습니다'));render()}
 function leagueTab(){
  if(!S.groups.length)return `<div class="card muted">${admin?'먼저 조추첨 탭에서 조를 추첨하세요.':'아직 조 편성이 진행되지 않았습니다.'}</div>`;
- return S.groups.map((g,gi)=>{const st=standings(gi),ms=matches(g),d=ms.filter(([i,j])=>done(S.sc[mk(g,i,j)])).length;
-  return `<div class="card"><div class="gh"><span class="gl">${gname(gi)}</span><span class="muted">${d} / ${ms.length} 경기</span></div>
-  <div class="scroll"><table><tr><th>#</th><th>이름</th><th>승점</th><th>승</th><th>무</th><th>패</th><th>득실</th></tr>
-  ${st.map((r,i)=>`<tr class="${i<S.adv?'q':''}"><td>${i+1}</td><td>${esc(r.n)}</td><td><b>${r.p}</b></td><td>${r.w}</td><td>${r.d}</td><td>${r.l}</td><td>${r.gf-r.ga}</td></tr>`).join('')}</table></div>
-  <div style="margin-top:12px">${ms.map(([i,j])=>{const k=mk(g,i,j);return `<div class="m"><span class="n">${esc(g.m[i])}</span>${sv('sc',k,0)}<span style="text-align:center">:</span>${sv('sc',k,1)}<span class="n">${esc(g.m[j])}</span></div>`}).join('')||'<div class="muted">경기가 없습니다</div>'}</div></div>`}).join('')}
+ const controls=admin?`<div class="card"><div class="row" style="justify-content:space-between"><b>조별리그 라운드 설정</b><span class="muted">현재 ${S.rounds}라운드</span></div><div class="row" style="align-items:center"><button class="btn s" onclick="changeRounds(-1)" ${S.rounds<=1?'disabled':''}>− 라운드 감소</button><button class="btn" onclick="changeRounds(1)" ${S.rounds>=6?'disabled':''}>＋ 라운드 추가</button><label class="muted" for="roundCount">직접 설정</label><input id="roundCount" type="number" min="1" max="6" value="${S.rounds}" style="max-width:78px" onchange="setRounds(this.value)"></div><p class="muted" style="margin:8px 0 0">라운드 수를 줄이면 삭제되는 라운드의 경기 점수도 함께 삭제됩니다.</p></div>`:`<div class="card muted">조별리그 ${S.rounds}라운드 진행</div>`;
+ return controls+S.groups.map((g,gi)=>{const st=standings(gi),ms=matches(g),d=ms.filter(([i,j,r])=>done(S.sc[mk(g,i,j,r)])).length;let prev=0;const fixtures=ms.map(([i,j,r])=>{const k=mk(g,i,j,r),label=r!==prev?`<div class="muted" style="font-weight:800;margin:12px 0 5px">${r}라운드</div>`:'';prev=r;return label+`<div class="m"><span class="n">${esc(g.m[i])}</span>${sv('sc',k,0)}<span style="text-align:center">:</span>${sv('sc',k,1)}<span class="n">${esc(g.m[j])}</span></div>`}).join('');
+  const table=`<div class="scroll"><table><tr><th>#</th><th>이름</th><th>승점</th><th>승</th><th>무</th><th>패</th><th>득실</th><th>패널티</th><th>어드벤티지</th></tr>${st.map((r,i)=>{const adj=S.adjustments[g.id]?.[r.n]||{};return `<tr class="${i<S.adv?'q':''}"><td>${i+1}</td><td>${esc(r.n)}</td><td><b>${r.p}</b></td><td>${r.w}</td><td>${r.d}</td><td>${r.l}</td><td>${r.gf-r.ga}</td><td>${admin?`<div class="row" style="gap:3px;justify-content:center"><button class="btn s sm" onclick="adjustPoint(${gi},decodeURIComponent('${encodeURIComponent(r.n)}'),'penalty',-1)">−</button><b>${r.penalty}</b><button class="btn s sm" onclick="adjustPoint(${gi},decodeURIComponent('${encodeURIComponent(r.n)}'),'penalty',1)">＋</button></div>`:r.penalty}</td><td>${admin?`<div class="row" style="gap:3px;justify-content:center"><button class="btn s sm" onclick="adjustPoint(${gi},decodeURIComponent('${encodeURIComponent(r.n)}'),'advantage',-1)">−</button><b>${r.advantage}</b><button class="btn s sm" onclick="adjustPoint(${gi},decodeURIComponent('${encodeURIComponent(r.n)}'),'advantage',1)">＋</button></div>`:r.advantage}</td></tr>`}).join('')}</table></div>`;
+  return `<div class="card"><div class="gh"><span class="gl">${gname(gi)}</span><span class="muted">${d} / ${ms.length} 경기</span></div>${table}<div style="margin-top:12px">${fixtures||'<div class="muted">경기가 없습니다</div>'}</div></div>`}).join('')}
+
 
 /* 토너먼트: 이름=참가자, ''=상대 미정, null=부전승 */
 function winner(m,key){const [a,b]=m;
@@ -267,12 +270,23 @@ function winner(m,key){const [a,b]=m;
  const x=+s[0],y=+s[1];if(x!==y)return x>y?a:b;
  const p=s[2],q=s[3];if(p===undefined||q===undefined||p===''||q==='')return '';
  return +p>+q?a:+p<+q?b:''}
+function minTourRounds(count){let n=1,r=0;while(n<count){n*=2;r++}return Math.max(1,r)}
+function changeTourRounds(delta){
+ if(!admin)return;const B=bracket();if(!B||B.seeds.length<2){toast('토너먼트 진출자가 2명 이상 필요합니다');return}
+ const min=minTourRounds(B.seeds.length),current=Math.max(min,+S.tourRoundCount||min),next=current+delta;
+ if(next<min){toast('현재 진출 인원을 모두 수용하려면 최소 '+min+'라운드가 필요합니다');return}
+ if(next>10){toast('토너먼트는 최대 10라운드까지 설정할 수 있습니다');return}
+ if(next===current)return;
+ if(!confirm('토너먼트 라운드를 변경하면 기존 토너먼트 경기 점수와 승부차기 점수가 모두 초기화됩니다. 계속할까요?'))return;
+ S.tourRoundCount=next;S.bt={};D={};save().then(ok=>toast(ok?'토너먼트 라운드를 변경하고 저장했습니다':'저장에 실패했습니다'));render()
+}
+function setTourRounds(v){if(!admin)return;const B=bracket();if(!B)return;const min=minTourRounds(B.seeds.length),n=parseInt(v,10);if(!Number.isInteger(n)||n<min||n>10){toast('토너먼트 라운드는 '+min+'~10 사이로 입력하세요');render();return}changeTourRounds(n-Math.max(min,+S.tourRoundCount||min))}
 function bracket(){
  if(!S.groups.length)return null;
  const sts=S.groups.map((_,i)=>standings(i)),seeds=[];
  for(let r=0;r<S.adv;r++){const row=sts.map(s=>s[r]&&s[r].n).filter(Boolean);seeds.push(...(r%2?row.reverse():row))}
- if(seeds.length<2)return {seeds};
- let n=1;while(n<seeds.length)n<<=1;const s=[...seeds];while(s.length<n)s.push(null);
+ if(seeds.length<2)return {seeds,roundCount:minTourRounds(seeds.length)};
+ const minRounds=minTourRounds(seeds.length),roundCount=Math.max(minRounds,+S.tourRoundCount||minRounds);let n=2**roundCount;const s=[...seeds];while(s.length<n)s.push(null);
  let cur=[];for(let i=0;i<n/2;i++)cur.push([s[i],s[n-1-i]]);
  const rounds=[];let rd=0;
  for(;;){const ms=cur.map((m,i)=>{const k=rd+'-'+i;return {a:m[0],b:m[1],k,w:winner(m,k)}});rounds.push(ms);
@@ -282,7 +296,7 @@ function bracket(){
  if(rounds.length>=2){const sf=rounds[rounds.length-2];
   const lo=m=>m.w===''?'':(m.a===null||m.b===null)?null:(m.w===m.a?m.b:m.a);
   const a=lo(sf[0]),b=lo(sf[1]);third={a,b,k:'3rd',w:winner([a,b],'3rd')}}
- return {seeds,rounds,fin:rounds[rounds.length-1][0],third}}
+ return {seeds,rounds,fin:rounds[rounds.length-1][0],third,roundCount}}
 const slot=p=>p===''?'<i>대기</i>':p===null?'<i>부전승</i>':esc(p);
 function pkRow(m){const s=S.bt[m.k];if(!s||!done(s)||+s[0]!==+s[1])return '';
  if(admin)return `<div class="t"><span class="muted">승부차기</span>${sv('bt',m.k,2)}${sv('bt',m.k,3)}</div>`;
@@ -304,9 +318,10 @@ function winnersTab(){const rows=S.winners.map((w,i)=>`<div class="row" style="j
 function tourTab(){
  if(!S.groups.length)return `<div class="card muted">${admin?'먼저 조추첨과 조별리그를 진행하세요.':'아직 토너먼트가 시작되지 않았습니다.'}</div>`;
  const B=bracket();syncChampion(B);
- const h=`<div class="card"><div class="row"><label for="adv">조별 진출 인원</label><select id="adv" ${admin?'':'disabled'} onchange="S.adv=+this.value;S.bt={};D={};save();render()">${[1,2,3,4].map(n=>`<option ${n===S.adv?'selected':''}>${n}</option>`).join('')}</select><span class="muted">진출 ${B.seeds.length}명</span></div></div>`;
+ const minR=minTourRounds(B.seeds.length),currentR=B.rounds?B.rounds.length:minR;
+ const h=`<div class="card"><div class="row"><label for="adv">조별 진출 인원</label><select id="adv" ${admin?'':'disabled'} onchange="S.adv=+this.value;S.bt={};D={};S.tourRoundCount=0;save();render()">${[1,2,3,4].map(n=>`<option ${n===S.adv?'selected':''}>${n}</option>`).join('')}</select><span class="muted">진출 ${B.seeds.length}명</span></div>${admin?`<div style="border-top:1px solid var(--line);margin-top:12px;padding-top:12px"><div class="row" style="justify-content:space-between"><b>토너먼트 라운드 설정</b><span class="muted">현재 ${currentR}라운드 · 최소 ${minR}라운드</span></div><div class="row" style="align-items:center;margin-top:8px"><button class="btn s" onclick="changeTourRounds(-1)" ${currentR<=minR?'disabled':''}>− 라운드 감소</button><button class="btn" onclick="changeTourRounds(1)" ${currentR>=10?'disabled':''}>＋ 라운드 추가</button><label class="muted" for="tourRoundCount">직접 설정</label><input id="tourRoundCount" type="number" min="${minR}" max="10" value="${currentR}" style="max-width:78px" onchange="setTourRounds(this.value)"></div><p class="muted" style="margin:8px 0 0">라운드를 추가하면 부전승 자리가 늘어나며, 기존 경기 점수는 초기화됩니다. 참가 팀을 모두 수용하는 데 필요한 최소 라운드 아래로는 줄일 수 없습니다.</p></div>`:''}</div>`;
  if(!B.rounds)return h+`<div class="card muted">진출자가 2명 이상 필요합니다.</div>`;
- const R=B.rounds,tot=R.length,L=['결승','4강','8강','16강','32강','64강'];
+ const R=B.rounds,tot=R.length,L=['결승','4강','8강','16강','32강','64강','128강','256강','512강','1024강'];
  const cols=R.map((ms,ri)=>`<div class="rd"><h4>${L[tot-ri-1]||(ri+1)+'라운드'}</h4>${ms.map(mbox).join('')}${ri===tot-1&&B.third?`<h4 style="margin-top:16px">3·4위전</h4>${mbox(B.third)}`:''}</div>`).join('');
  const f=B.fin,ok=x=>x&&typeof x==='string',champ=f.w;
  const runner=ok(champ)&&f.a&&f.b?(champ===f.a?f.b:f.a):null;
@@ -315,7 +330,7 @@ function tourTab(){
 
 /* 대회진행현황 */
 function ro(f){const a=admin;admin=false;try{return f()}finally{admin=a}}
-function prog(){let t=0,d=0;S.groups.forEach(g=>matches(g).forEach(([i,j])=>{t++;if(done(S.sc[mk(g,i,j)]))d++}));return [d,t]}
+function prog(){let t=0,d=0;S.groups.forEach(g=>matches(g).forEach(([i,j,r])=>{t++;if(done(S.sc[mk(g,i,j,r)]))d++}));return [d,t]}
 function setSub(k){S.sub=k;render()}
 const SUBS=[['league','조별리그'],['tour','토너먼트'],['scorer','득점왕'],['groups','조편성'],['winners','역대 우승자']];
 function statusTab(){
@@ -334,7 +349,7 @@ function tourMatches(){const B=bracket();if(!B||!B.rounds)return [];const out=[]
 function scorers(){
  const m={},get=n=>m[n]||(m[n]={n,l:0,t:0,p:0});
  S.groups.forEach(g=>g.m.forEach(n=>get(n)));
- S.groups.forEach(g=>matches(g).forEach(([i,j])=>{const s=S.sc[mk(g,i,j)];if(!done(s))return;const a=get(g.m[i]),b=get(g.m[j]);a.l+=+s[0];b.l+=+s[1];a.p++;b.p++}));
+ S.groups.forEach(g=>matches(g).forEach(([i,j,r])=>{const s=S.sc[mk(g,i,j,r)];if(!done(s))return;const a=get(g.m[i]),b=get(g.m[j]);a.l+=+s[0];b.l+=+s[1];a.p++;b.p++}));
  tourMatches().forEach(x=>{if(!done(x.s))return;const a=get(x.a),b=get(x.b);a.t+=+x.s[0];b.t+=+x.s[1];a.p++;b.p++});
  return Object.values(m).map(r=>({...r,g:r.l+r.t})).sort((a,b)=>b.g-a.g||b.t-a.t||a.p-b.p||a.n.localeCompare(b.n))}
 function scorerTab(){
@@ -348,7 +363,7 @@ function scorerTab(){
 
 /* 시즌 초기화 */
 function resetSeason(){if(arm!=='reset'){arm='reset';render();setTimeout(()=>{if(arm==='reset'){arm='';render()}},3000);return}
- arm='';S.groups=[];S.order=[];S.sc={};S.bt={};S.seasonId='season-'+Date.now().toString(36);D={};S.edit=false;S.sub='league';
+ arm='';S.groups=[];S.order=[];S.sc={};S.bt={};S.adjustments={};S.rounds=1;S.tourRoundCount=0;S.seasonId='season-'+Date.now().toString(36);D={};S.edit=false;S.sub='league';
  save().then(ok=>toast(ok?'시즌을 초기화했습니다':'GitHub 저장에 실패해 이 화면에만 반영됐습니다'));render()}
 const resetCard=()=>`<div class="card"><h3>시즌 초기화</h3><p class="muted" style="margin:0">조편성과 조별리그·토너먼트 점수(득점 순위 포함)를 모두 지우고 새 시즌을 시작합니다. 참가자 명단은 남습니다.</p><button class="btn s" onclick="resetSeason()">${arm==='reset'?'한 번 더 누르면 초기화':'시즌 초기화'}</button></div>`;
 function ghCard(){const c=GH.cfg(),st=GH.info();
